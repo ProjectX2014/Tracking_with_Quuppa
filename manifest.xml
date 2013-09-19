@@ -1,0 +1,21 @@
+<package>
+  <description brief="Tracking_with_Quuppa">
+
+     Tracking_with_Quuppa
+
+  </description>
+  <author>redbull1</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/Tracking_with_Quuppa</url>
+
+  <depend package="roscpp"/>
+  <depend package="rospy"/>
+  <depend package="std_msgs"/>
+  <depend package="sensor_msgs"/>
+  <depend package="tf"/>
+  <depend package="geometry_msgs"/>
+
+</package>
+
+

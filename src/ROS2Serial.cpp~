@@ -1,0 +1,13 @@
+#include <ros/ros.h>
+#include <stdio.h>
+#include <stdlib.h> 
+#include <string.h>
+#include <Tracking_with_Quuppa/AZTag.h>
+#include <vector>
+#include <ros/time.h>
+#include <std_msgs/Float32.h>
+#include <geometry_msgs/Vector3.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <termios.h>

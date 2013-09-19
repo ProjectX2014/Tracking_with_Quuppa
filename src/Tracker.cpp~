@@ -1,0 +1,232 @@
+#include <ros/ros.h>
+#include <stdio.h>
+#include <stdlib.h> 
+#include <string.h>
+#include <Tracking_with_Quuppa/AZTag.h>
+#include <vector>
+#include <ros/time.h>
+#include <std_msgs/Float32.h>
+#include <geometry_msgs/Vector3.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <termios.h>
+
+const float PI = 3.14159265359;
+
+const int NEUTRAL = 128;
+const int MAXX = 312;
+const int MAXY = 233;
+const int MAXSERVO = 254;
+
+int open_port();
+void dputchar(char c,int fd);
+void sendCommands(const int& controlX, const int& controlY, int fd);
+
+void servoControl(const float&, const float&, const float&, int&, int&, int&);
+void mixSignals(void); // later can be some form of sensor fusion
+
+// RPY variables of the marker from quupa
+float trackerRoll  = 0.0;
+float trackerPitch = 0.0; 
+float trackerYaw   = 0.0;
+
+// X and Y from camera
+float cameraX = 0.0;
+float cameraY = 0.0;
+float cameraZ = 0.0;
+
+// Post-filtering xy values
+float posX = 0.0;
+float posY = 0.0;
+float posZ = 0.0;
+
+geometry_msgs::Vector3 controlRPY;
+geometry_msgs::Vector3 oldRPY;
+
+double yawTime;
+double pitchTime;
+
+void quupa_rpy_callback(const geometry_msgs::Vector3& msg) {
+	trackerRoll  = msg.z;	// Roll is actually pitch!
+	trackerPitch = msg.x;	// Pitch is roll
+	trackerYaw   = msg.y;   // Yaw is nothing!
+}
+
+void camera_rpy_callback(const geometry_msgs::Vector3& msg) {
+	cameraX = msg.x;
+	cameraY = msg.y;
+	// Ignore z
+}
+
+int main(int argc, char** argv) {
+	ros::init(argc, argv, "Tracker");
+	ros::NodeHandle node;
+	ros::Rate loop_rate(50);
+
+	if(node.getParam("/yawTime", yawTime)) {;}
+	else ROS_ERROR("No yaw time horizon.");
+	if(node.getParam("/pitchTime", pitchTime)) {;}
+	else ROS_ERROR("No pitch time horizon.");
+
+	ros::Subscriber quupaRPY_sub = node.subscribe("MarkerRPY", 1, quupa_rpy_callback);
+	ros::Subscriber cameraXY_sub = node.subscribe("CameraXY", 1, camera_rpy_callback);
+	ros::Publisher  control_pub = node.advertise<geometry_msgs::Vector3>("controlVector",1);
+	int controlR, controlP, controlY;
+	controlR = NEUTRAL; controlP = NEUTRAL; controlY = NEUTRAL;
+
+	int portNo = open_port();
+
+	double dt = 1.0/50.0;
+	double yawAlpha = dt / (yawTime+dt);
+	double pitchAlpha = dt / (pitchTime+dt);
+	ROS_INFO("Yaw Alpha = %f", yawAlpha);
+	ROS_INFO("Pitch Alpha = %f", pitchAlpha);
+
+	oldRPY.x = 0.0; oldRPY.y = 0.0; oldRPY.z = 0.0;
+
+	while(ros::ok()) {
+		
+		//trackerRoll  = alpha*trackerRoll  + (1.0-alpha)*oldRPY.x;
+		trackerPitch = pitchAlpha*trackerPitch + (1.0-pitchAlpha)*oldRPY.y;
+		trackerYaw   = yawAlpha*trackerYaw   + (1.0-yawAlpha)*oldRPY.z;
+
+//		trackerRoll = 0.0;
+//		trackerPitch = 0.0;
+//		trackerYaw = 0.0;
+
+		servoControl(trackerPitch, trackerYaw, trackerRoll, controlR, controlP, controlY);
+		controlRPY.x = controlR; controlRPY.y = controlP; controlRPY.z = controlY;
+		control_pub.publish(controlRPY);
+		
+		// Send command s to the serial port selected in portNo
+		sendCommands(controlP, controlR, portNo);
+
+		oldRPY.x = trackerRoll; oldRPY.y = trackerPitch; oldRPY.z = trackerYaw;
+
+		ros::spinOnce();
+		loop_rate.sleep();
+	}
+}
+
+void servoControl(const float& rollIn, const float& pitchIn, const float& yawIn, int& controlRoll, int& controlPitch, int& controlYaw) {
+	static double bound = 1.0*PI/180.0;
+
+	static int oldControlRoll = NEUTRAL; 
+	static int oldControlPitch = NEUTRAL;
+	static int oldControlYaw = NEUTRAL;
+
+	static double KpR, KpP, KpY, KdR, KdP, KdY, KiR, KiP,KiY;
+	KpR = 8.0;  KpP = -15.0; KpY = 0.0;
+	KdR = 3.0;  KdP = 5.0; KdY = 0.0;	
+	KiR = 0.0;  KiP = 0.0; KiY = 0.0;
+
+	static double oldErrorRoll = 0.0; static double oldErrorPitch = 0.0; static double oldErrorYaw = 0.0;
+	static double sumErrorRoll = 0.0; static double sumErrorPitch = 0.0; static double sumErrorYaw = 0.0;
+	
+	if(abs(rollIn) < bound) oldErrorRoll = 0.0;
+	if(abs(pitchIn) < bound) oldErrorPitch = 0.0;
+	if(abs(yawIn) < bound) oldErrorYaw = 0.0;
+
+	sumErrorRoll += rollIn; sumErrorPitch += pitchIn; sumErrorYaw += yawIn;
+	controlRoll = oldControlRoll + (KpR*rollIn + KdR*(rollIn - oldErrorRoll) + KiR*sumErrorRoll);
+	controlPitch = oldControlPitch + (KpP*pitchIn + KdP*(pitchIn - oldErrorPitch) + KiP*sumErrorPitch);
+	controlYaw = oldControlYaw + (KpY*yawIn + KdY*(yawIn - oldErrorYaw) + KiY*sumErrorYaw);
+	oldErrorRoll = rollIn; oldErrorPitch = pitchIn; oldErrorYaw = yawIn;
+
+	if(controlRoll > MAXSERVO) {
+		controlRoll = MAXSERVO;
+		sumErrorRoll = 0.0;
+		oldErrorRoll = 0.0;
+//		oldErrorRoll = controlRoll;
+		
+	}
+	if(controlRoll <= 0) {
+		controlRoll = 1;
+		sumErrorRoll = 0.0;
+		oldErrorRoll = 0.0;
+//		oldErrorRoll = controlRoll;
+	}
+	if(controlPitch > MAXSERVO) {
+		controlPitch = MAXSERVO;
+		sumErrorPitch = 0.0; 
+		oldErrorPitch = 0.0;
+//		oldErrorPitch = controlPitch;
+	}
+	if(controlPitch <= 0) {
+		controlPitch = 1;
+		sumErrorPitch = 0.0; 
+		oldErrorPitch = 0.0;
+//		oldErrorPitch = controlPitch;
+	}
+	if(controlYaw > MAXSERVO) {
+		controlYaw = MAXSERVO;
+		sumErrorYaw = 0.0; 
+		oldErrorYaw = 0.0;
+//		oldErrorYaw = controlYaw;
+	}
+	if(controlYaw <= 0) {
+		controlYaw = 1;
+		sumErrorYaw = 0.0; 
+		oldErrorYaw = 0.0;
+//		oldErrorYaw = controlYaw;
+	}
+	oldControlRoll = controlRoll; oldControlPitch = controlPitch; oldControlYaw = controlYaw;
+} 
+	
+// Opens serial port. Currently ttyS2 which is the db9 connector
+int open_port(void) {
+	int fd; // file description for the serial port
+	//fd = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
+	fd = open("/dev/ttyS0", O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
+	struct termios options;
+	tcgetattr(fd,&options);
+	cfsetispeed(&options, B115200);
+	cfsetospeed(&options, B115200);
+	tcsetattr(fd,TCSANOW, &options);
+	if(fd == -1) {
+		ROS_ERROR("Port could not be opened");
+		close(fd);
+	}
+	else {
+		fcntl(fd, F_SETFL, 0);
+		ROS_INFO("port is open. \n");
+	}
+	return (fd);
+}
+
+// sends a character to that port
+void dputchar(char c,int fd) {
+	unsigned char send_byte[] = {c};
+	ssize_t k = write(fd,send_byte,1);
+	if(k == -1) printf("ERROR SENDING\n");
+	usleep(2000);
+}
+
+// send the full list of commands to the servo board with a 2ms delay between chars
+void sendCommands(const int& controlX, const int& controlY, int fd) {
+	// Temp value for pulling characters out of command
+	int intTemp;
+	static char digits[10] = {'0','1','2','3','4','5','6','7','8','9'};
+	static char esc = (unsigned char) 27;
+	// Send esc
+	dputchar(esc,fd);
+	// Sending roll info
+	dputchar('r',fd);
+	intTemp = controlX / 100 % 10;
+	dputchar(digits[intTemp],fd);
+	intTemp = controlX / 10 % 10;
+	dputchar(digits[intTemp],fd);
+	intTemp = controlX % 10;
+	dputchar(digits[intTemp],fd);
+	// Sending pitch info
+	dputchar('p', fd);
+	intTemp = controlY / 100 % 10;
+	dputchar(digits[intTemp],fd);
+	intTemp = controlY / 10 % 10;
+	dputchar(digits[intTemp],fd);
+	intTemp = controlY % 10;
+	dputchar(digits[intTemp],fd);
+}
+
+	
