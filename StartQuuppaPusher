@@ -1,5 +1,5 @@
 sudo chmod 666 /dev/ttyS0
-sudo chmod 666 /dev/ttyUSB0
-sudo ifconfig eth1 192.168.123.124 netmask 255.255.255.0
+#sudo chmod 666 /dev/ttyUSB0
+sudo ifconfig eth2 192.168.123.124 netmask 255.255.255.0
 cd ~/quuppa/QuuppaAnglePusher/
 java -jar QuuppaAnglePusher-2.0.x-r1502-proguard.jar

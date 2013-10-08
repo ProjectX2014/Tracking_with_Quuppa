@@ -30,36 +30,35 @@ void dputchar(char c,int fd) {
 }
 
 // send the full list of commands to the servo board with a 2ms delay between chars
-void sendCommands(const int& controlX, const int& controlY, int fd) {
+void sendCommands(const int& gimballPitch, const int& gimballYaw, const int& copterYaw, int fd) {
 	// Temp value for pulling characters out of command
 	int intTemp;
 	static char digits[10] = {'0','1','2','3','4','5','6','7','8','9'};
 	static char esc = (unsigned char) 27;
-	// Send esc
 	dputchar(esc,fd);
-	// Sending roll info
+
 	dputchar('p',fd);
-//	if(debugSerial)	printf("\np");
-	intTemp = controlX / 100 % 10;
-//	if(debugSerial)printf("%c", digits[intTemp]);
+	intTemp = gimballPitch / 100 % 10;
 	dputchar(digits[intTemp],fd);
-	intTemp = controlX / 10 % 10;
-//	if(debugSerial)printf("%c", digits[intTemp]);
+	intTemp = gimballPitch / 10 % 10;
 	dputchar(digits[intTemp],fd);
-	intTemp = controlX % 10;
-//	if(debugSerial)printf("%c", digits[intTemp]);
+	intTemp = gimballPitch % 10;
 	dputchar(digits[intTemp],fd);
-	// Sending pitch info
+
 	dputchar('r', fd);
-//	if(debugSerial)printf("r");
-	intTemp = controlY / 100 % 10;
-//	if(debugSerial)printf("%c", digits[intTemp]);
+	intTemp = gimballYaw / 100 % 10;
 	dputchar(digits[intTemp],fd);
-	intTemp = controlY / 10 % 10;
-//	if(debugSerial)printf("%c", digits[intTemp]);
+	intTemp = gimballYaw / 10 % 10;
 	dputchar(digits[intTemp],fd);
-	intTemp = controlY % 10;
-//	if(debugSerial)printf("%c", digits[intTemp]);
+	intTemp = gimballYaw % 10;
+	dputchar(digits[intTemp],fd);
+
+	dputchar('y', fd);
+	intTemp = copterYaw / 100 % 10;
+	dputchar(digits[intTemp],fd);
+	intTemp = copterYaw / 10 % 10;
+	dputchar(digits[intTemp],fd);
+	intTemp = copterYaw % 10;
 	dputchar(digits[intTemp],fd);
 }
 

@@ -4,8 +4,15 @@
 <node pkg="Lindsey" type ="Quuppa_AZ" name="QuuppaNetworkReader" respawn="true" />
 <node pkg="Tracking_with_Quuppa" type="Tracker" name="mainTracker" respawn="true" output="screen" />
 
-<param name = "yawTime" value = "0.05" />
-<param name = "pitchTime" value = "0.05" />
+<param name = "yawTime" value = "0.075" />
+<param name = "pitchTime" value = "0.075" />
+
+<param name = "rollP" value = "15.0" /> <!-- 15 -->
+<param name = "rollD" value = "-5.0" /> <!-- -5 -->
+<param name = "pitchP" value = "-30.0" /> <!-- -15 -->
+<param name = "pitchD" value = "5.0" /> <!-- 5 -->
+<param name = "yawP" value = "20.0" />
+<param name = "yawD" value = "0.0" />
 
 <!-- Later will have package here to read from camera, possibly do serial, and the actual tracking node. -->
 </launch>
